@@ -1,4 +1,4 @@
-import { setupCameraBackground } from "./camera-background.js?v=0.7.0";
+import { setupCameraBackground } from "./camera-background.js?v=0.7.4";
 import { setupFocusTimer } from "./focus-timer.js?v=0.7.0";
 import { setupMiniWindow } from "./mini-window.js?v=0.7.0";
 import { setupCameraDevices } from "./camera-device.js?v=0.7.1";

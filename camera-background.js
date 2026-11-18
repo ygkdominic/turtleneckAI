@@ -4,6 +4,11 @@ const SCENES = {
 };
 const MODES = ["original", "blur", ...Object.keys(SCENES)];
 const SETTINGS_KEY = "turtleneckAIBackground";
+const MASK_SAMPLE_SIZE = 256;
+const MASK_SMOOTHING_MS = 100;
+const MASK_MAX_GAP_MS = 200;
+const MASK_BLACK = [0, 0, 0, 255];
+const MASK_WHITE = [255, 255, 255, 255];
 
 export function setupCameraBackground(preview, onPreviewCleared) {
   const wrap = preview.parentElement;
@@ -18,6 +23,8 @@ export function setupCameraBackground(preview, onPreviewCleared) {
   let mode = "original";
   let active = false;
   let renderer;
+  let blurMask;
+  let blurSmoothingFailed = false;
   let modelGL;
   let renderedScene;
   let effectFailed = false;
@@ -31,6 +38,8 @@ export function setupCameraBackground(preview, onPreviewCleared) {
   function select(next) {
     mode = next;
     effectFailed = false;
+    blurSmoothingFailed = false;
+    blurMask?.reset();
     wrap.dataset.background = mode;
     for (const button of buttons) {
       button.setAttribute("aria-pressed", String(button.dataset.backgroundOption === mode));
@@ -100,14 +109,33 @@ export function setupCameraBackground(preview, onPreviewCleared) {
       }
 
       if (backdrop) {
-        context.imageSmoothingQuality = "high";
-        context.drawImage(backdrop, 0, 0, width, height);
         if (mask && renderer) {
-          // Sample the mask in the model's WebGL context without reading it into JavaScript.
+          // Sample the mask in the model's WebGL context without a float texture readback.
           if (modelGL) {
             modelGL.bindFramebuffer(modelGL.FRAMEBUFFER, null);
             modelGL.viewport(0, 0, modelGL.drawingBufferWidth, modelGL.drawingBufferHeight);
           }
+          if (mode === "blur" && blurMask && !blurSmoothingFailed) {
+            let matte;
+            try {
+              matte = blurMask.update(mask, width, height, performance.now());
+            } catch (error) {
+              console.warn("블러 윤곽 보정 실패", error);
+              blurSmoothingFailed = true;
+              blurMask.reset();
+            }
+            if (matte) {
+              drawMaskedFrame(context, frame, backdrop, matte);
+              return true;
+            }
+          }
+        } else if (mode === "blur") {
+          blurMask?.reset();
+        }
+
+        context.imageSmoothingQuality = "high";
+        context.drawImage(backdrop, 0, 0, width, height);
+        if (mask && renderer) {
           renderer.drawConfidenceMask(mask, backdrop, frame);
           return true;
         }
@@ -144,14 +172,19 @@ export function setupCameraBackground(preview, onPreviewCleared) {
     setRenderer(DrawingUtils, canvas) {
       if (!context) return;
       renderer?.close();
+      blurMask?.close();
       modelGL = canvas.getContext("webgl2");
       renderer = new DrawingUtils(context, modelGL ?? undefined);
+      blurMask = createBlurMask(DrawingUtils, modelGL);
+      blurSmoothingFailed = false;
     },
     setActive(isActive) {
       active = isActive;
       effectFailed = false;
+      blurSmoothingFailed = false;
       if (!active) {
         renderer?.close();
+        blurMask?.close();
         // Resizing clears all temporary video pixels.
         for (const canvas of [preview, blurCanvas]) {
           canvas.width = canvas.height = 1;
@@ -160,6 +193,74 @@ export function setupCameraBackground(preview, onPreviewCleared) {
       }
     }
   };
+}
+
+function createBlurMask(DrawingUtils, modelGL) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  const drawing = new DrawingUtils(context, modelGL ?? undefined);
+  let previous;
+  let lastFrameTime;
+
+  return {
+    update(mask, frameWidth, frameHeight, now) {
+      const scale = Math.min(1, MASK_SAMPLE_SIZE / Math.max(frameWidth, frameHeight));
+      const width = Math.max(1, Math.round(frameWidth * scale));
+      const height = Math.max(1, Math.round(frameHeight * scale));
+      if (!previous || canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        previous = new Float32Array(width * height);
+        lastFrameTime = undefined;
+      }
+      const elapsed = now - lastFrameTime;
+      const weight = elapsed < MASK_MAX_GAP_MS ? 1 - Math.exp(-elapsed / MASK_SMOOTHING_MS) : 1;
+      const fastWeight = 1 - (1 - weight) ** 3;
+
+      context.clearRect(0, 0, width, height);
+      drawing.drawConfidenceMask(mask, MASK_BLACK, MASK_WHITE);
+      const image = context.getImageData(0, 0, width, height);
+      const pixels = image.data;
+      for (let i = 0, pixel = 0; i < previous.length; i += 1, pixel += 4) {
+        const current = pixels[pixel];
+        const difference = current - previous[i];
+        // Early changes near the edge get averaged; large changes follow motion faster.
+        const motion = Math.max(0, Math.min(1, (Math.abs(difference) - 64) / 128));
+        const smoothed = previous[i] + difference * (weight + motion * (fastWeight - weight));
+        previous[i] = smoothed;
+        // Fade uncertain edges and clear areas the current frame identifies as background.
+        pixels[pixel + 3] = (Math.min(smoothed, current * 1.6) - 24) * (255 / 200);
+      }
+      context.putImageData(image, 0, 0);
+      lastFrameTime = now;
+      return canvas;
+    },
+    reset() {
+      lastFrameTime = undefined;
+    },
+    close() {
+      drawing.close();
+      canvas.width = canvas.height = 1;
+      previous = undefined;
+      lastFrameTime = undefined;
+    }
+  };
+}
+
+function drawMaskedFrame(context, frame, backdrop, matte) {
+  const { width, height } = frame;
+  context.save();
+  try {
+    context.imageSmoothingQuality = "high";
+    context.drawImage(frame, 0, 0);
+    context.globalCompositeOperation = "destination-in";
+    context.drawImage(matte, 0, 0, width, height);
+    context.globalCompositeOperation = "destination-over";
+    context.drawImage(backdrop, 0, 0, width, height);
+  } finally {
+    context.restore();
+  }
 }
 
 function drawCover(context, image, width, height) {
