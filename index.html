@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f5f7fb" />
+  <title>turtleneckAI</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css?v=0.7.3" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">ON-DEVICE AI HABIT COACH</div>
+      <h1>turtleneckAI</h1>
+      <p class="hero-copy">집중하는 동안 자세가 흐트러지면 알려드려요.</p>
+      <p class="privacy-copy">영상은 저장하지 않고 기기에서 분석합니다.</p>
+      <div class="hero-actions">
+        <button id="startBtn" class="primary">카메라 시작</button>
+        <button id="calibrateBtn" class="secondary" disabled>바른 자세 설정</button>
+        <button id="miniWindowBtn" class="secondary" type="button" aria-describedby="miniWindowStatus">미니 창 열기</button>
+        <label class="mini-pin"><input id="miniWindowPinned" type="checkbox" /> 항상 위</label>
+      </div>
+      <p id="miniWindowStatus" class="mini-window-status" role="status" hidden></p>
+    </section>
+
+    <section class="dashboard">
+      <article class="camera-card glass" aria-label="카메라 미리보기">
+        <div class="video-wrap" data-background="original">
+          <video id="webcam" class="video-source" autoplay playsinline muted disablepictureinpicture disableremoteplayback aria-hidden="true"></video>
+          <canvas id="backgroundPreview" aria-label="카메라 영상과 자세 인식선"></canvas>
+          <p id="cameraPlaceholder" class="camera-placeholder">카메라를 켜면 자세 측정이 시작됩니다.</p>
+          <div id="privacyBadge" class="privacy-badge">영상 저장 없음 · 기기 내 분석</div>
+          <div id="autoCalibrateOverlay" class="auto-calibrate-overlay hidden">
+            <span id="autoCalibrateMessage">자세를 바로잡아 주세요</span>
+            <strong id="autoCalibrateCount">3</strong>
+            <small>3초 후 기준자세가 자동으로 설정됩니다</small>
+          </div>
+          <div class="camera-status-chip">
+            <span>현재 자세</span>
+            <strong id="cameraStatusText">측정 대기 중</strong>
+          </div>
+          <div class="recognition-chip" id="recognitionChip">
+            <span>인식 상태</span>
+            <strong id="recognitionStatusText">대기 중</strong>
+          </div>
+        </div>
+        <div class="camera-device-controls">
+          <label for="cameraSelect" class="card-label">카메라 선택</label>
+          <select id="cameraSelect">
+            <option value="">자동 (내장 카메라 우선)</option>
+          </select>
+          <span id="cameraDeviceStatus" role="status" hidden></span>
+        </div>
+        <div class="background-controls">
+          <span id="backgroundLabel" class="card-label">카메라 배경</span>
+          <div class="background-options" role="group" aria-labelledby="backgroundLabel">
+            <button type="button" class="background-option" data-background-option="original" aria-pressed="true">원본</button>
+            <button type="button" class="background-option" data-background-option="blur" aria-pressed="false">블러</button>
+            <button type="button" class="background-option" data-background-option="meeting" aria-pressed="false">회의실</button>
+            <button type="button" class="background-option" data-background-option="cafe" aria-pressed="false">카페</button>
+          </div>
+          <p id="backgroundStatus" class="background-status" role="status" hidden></p>
+        </div>
+      </article>
+
+      <article class="glass focus-card" aria-labelledby="focusHeading">
+        <header class="focus-header">
+          <h2 id="focusHeading">집중 타이머</h2>
+          <p>집중 시간이 끝나면 자세를 다시 잡을 시간이에요.</p>
+        </header>
+        <div class="focus-display">
+          <div id="focusState" class="focus-state">시작 대기</div>
+          <div id="focusTime" role="timer" aria-label="남은 집중 시간" aria-live="off">30:00</div>
+          <progress id="focusProgress" value="0" max="1800" aria-label="집중 시간 진행률"></progress>
+        </div>
+        <fieldset id="focusDurations" class="focus-field">
+          <legend>집중 시간</legend>
+          <div class="focus-presets">
+            <button type="button" data-focus-minutes="5" aria-pressed="false">5분</button>
+            <button type="button" data-focus-minutes="10" aria-pressed="false">10분</button>
+            <button type="button" data-focus-minutes="15" aria-pressed="false">15분</button>
+            <button type="button" data-focus-minutes="20" aria-pressed="false">20분</button>
+            <button type="button" data-focus-minutes="30" aria-pressed="true">30분</button>
+            <button type="button" data-focus-minutes="50" aria-pressed="false">50분</button>
+            <button type="button" data-focus-minutes="60" aria-pressed="false">1시간</button>
+            <button type="button" data-focus-minutes="custom" aria-pressed="false" aria-controls="focusCustom">직접 설정</button>
+          </div>
+          <div id="focusCustom" class="focus-custom" hidden>
+            <label><input id="focusMinutes" type="number" min="0" max="1439" step="1" value="25" inputmode="numeric" aria-describedby="focusInputError" /> 분</label>
+            <label><input id="focusSeconds" type="number" min="0" max="59" step="1" value="0" inputmode="numeric" aria-describedby="focusInputError" /> 초</label>
+            <p id="focusInputError" class="focus-input-error" role="status" hidden></p>
+          </div>
+        </fieldset>
+        <fieldset class="focus-field">
+          <legend>타이머 알림</legend>
+          <div class="focus-alerts">
+            <label><input id="focusSound" type="checkbox" checked /> 소리</label>
+            <label><input id="focusPage" type="checkbox" checked /> 페이지</label>
+            <label><input id="focusDesktop" type="checkbox" aria-describedby="focusDesktopStatus" /> 컴퓨터</label>
+          </div>
+          <div id="focusDesktopHelp" class="focus-desktop-help" hidden>
+            <span id="focusDesktopStatus" role="status"></span>
+            <button id="focusNotifyBtn" type="button" class="tiny-button">권한 허용</button>
+          </div>
+        </fieldset>
+        <div class="focus-actions">
+          <button id="focusStart" class="primary" type="button">집중 시작</button>
+          <button id="focusReset" class="secondary" type="button" disabled>초기화</button>
+        </div>
+        <div id="focusReminder" class="focus-reminder" role="status" aria-atomic="true"></div>
+      </article>
+
+      <article class="score-card glass">
+        <div class="card-label">현재 자세 점수</div>
+        <div class="score-row">
+          <div id="score" class="score">--</div>
+          <div id="statusPill" class="status-pill idle">대기 중</div>
+        </div>
+        <div class="meter"><div id="meterFill" class="meter-fill"></div></div>
+        <p id="feedback" class="feedback">카메라를 시작한 뒤 얼굴과 양쪽 어깨가 화면에 들어오도록 앉아 기준 자세를 설정하세요.</p>
+        <p id="qualityGuide" class="quality-guide">정면을 바라보고, 얼굴과 양쪽 어깨가 화면 안에 들어오면 인식 상태가 안정적으로 표시됩니다.</p>
+      </article>
+
+      <article class="glass controls-card">
+        <div class="card-label">자세 알림 설정</div>
+        <label class="control-row">
+          <span>민감도</span>
+          <select id="sensitivity">
+            <option value="low">낮음</option>
+            <option value="medium" selected>보통</option>
+            <option value="high">높음</option>
+          </select>
+        </label>
+        <label class="control-row">
+          <span>알림 지연</span>
+          <select id="alertDelay">
+            <option value="5">5초</option>
+            <option value="10" selected>10초</option>
+            <option value="20">20초</option>
+          </select>
+        </label>
+        <label class="control-row">
+          <span>알림 방식</span>
+          <select id="alertMode">
+            <option value="page" selected>페이지 내 알림</option>
+            <option value="desktop">컴퓨터 알림</option>
+            <option value="both">둘 다 받기</option>
+            <option value="off">알림 끄기</option>
+          </select>
+        </label>
+        <div class="notification-box">
+          <div>
+            <strong id="notificationStatus">컴퓨터 알림 권한: 확인 전</strong>
+            <span>자세가 무너질 때 원하는 방식으로 알려드릴게요.</span>
+          </div>
+          <button id="requestNotifyBtn" class="tiny-button" type="button">내 컴퓨터 알림 켜기</button>
+        </div>
+        <label class="toggle-row">
+          <input id="soundToggle" type="checkbox" checked />
+          <span>부드러운 사운드 알림</span>
+        </label>
+        <button id="soundTestBtn" class="tiny-button full" type="button">알림 소리 테스트</button>
+      </article>
+
+      <article class="glass stats-card">
+        <div class="card-label">오늘 자세 요약</div>
+        <div class="stats-grid">
+          <div class="stat-good"><strong id="goodTime">0분</strong><span>좋은 자세</span></div>
+          <div class="stat-warn"><strong id="warnTime">0분</strong><span>주의 자세</span></div>
+          <div class="stat-bad"><strong id="badTime">0분</strong><span>무너진 자세</span></div>
+          <div><strong id="goodRatio">0%</strong><span>좋은 자세 비율</span></div>
+          <div><strong id="badCount">0회</strong><span>무너짐 알림</span></div>
+          <div><strong id="sessionTime">0분</strong><span>사용 시간</span></div>
+        </div>
+        <p id="reportTimestamp" class="report-time">리포트 생성 전</p>
+        <p id="dailyInsight" class="daily-insight">측정이 시작되면 오늘의 자세 패턴을 요약해드립니다.</p>
+        <div class="report-actions">
+          <button id="saveReportBtn" class="tiny-button" type="button">오늘 리포트 저장</button>
+        </div>
+      </article>
+    </section>
+
+    <details class="guide glass">
+      <summary><h2>터틀넥 AI 사용법</h2></summary>
+      <div class="guide-content">
+        <ol class="guide-list">
+          <li><strong>카메라와 기준 자세</strong><span>카메라를 켜고 얼굴과 양쪽 어깨가 보이도록 앉으세요. 3초 동안 바른 자세를 유지하면 기준 자세가 설정됩니다.</span></li>
+          <li><strong>자세 알림</strong><span>자세 알림 설정에서 민감도, 알림 지연, 알림 방식을 고르세요.</span></li>
+          <li><strong>집중 타이머</strong><span>시간과 알림 방식을 고르고 집중 시작을 누르세요. 시간이 끝나면 자세를 다시 잡도록 알려드려요.</span></li>
+          <li><strong>미니 창</strong><span>다른 작업을 하면서 카메라와 타이머를 보려면 미니 창을 여세요. 고정하려면 항상 위를 켜세요.</span></li>
+        </ol>
+        <p class="disclaimer">터틀넥 AI는 의료 진단이나 치료 목적이 아닌, 좋은 자세 습관 형성을 돕는 AI 습관 코치입니다.</p>
+      </div>
+    </details>
+  </main>
+
+
+  <div id="toast" class="toast hidden" aria-hidden="true">
+    <strong>자세가 무너지고 있어요</strong>
+    <span>턱을 살짝 당기고, 어깨를 내린 뒤 등받이에 기대보세요.</span>
+  </div>
+
+  <template id="miniWindowTemplate">
+    <main class="mini-window">
+      <div class="mini-preview">
+        <canvas aria-hidden="true"></canvas>
+        <p class="mini-camera-off">카메라 꺼짐</p>
+        <span class="mini-posture" hidden></span>
+      </div>
+      <footer class="mini-timer">
+        <div class="mini-countdown">
+          <span class="mini-timer-state" role="status">시작 대기</span>
+          <strong class="mini-time" role="timer" aria-label="남은 집중 시간">30:00</strong>
+        </div>
+        <button class="mini-timer-action" type="button">집중 시작</button>
+      </footer>
+    </main>
+  </template>
+
+  <script type="module" src="app.js?v=0.7.1"></script>
+</body>
+</html>
