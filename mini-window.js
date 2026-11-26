@@ -15,6 +15,9 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
   let view;
   let timer;
   let opening = false;
+  let pendingPin = false;
+  let preparedVideo;
+  const colorAnimator = createPostureAnimator();
   let size = { width: WIDTH, height: HEIGHT };
 
   pin.disabled = !canPin;
@@ -31,7 +34,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
   }
 
   function syncControls() {
-    button.textContent = view ? "미니 창 닫기" : "미니 창 열기";
+    button.textContent = pendingPin ? "항상 위로 전환" : view ? "미니 창 닫기" : "미니 창 열기";
     button.disabled = opening;
     pin.disabled = opening || !canPin;
     view?.syncPin?.(pin.checked, opening || !canPin);
@@ -57,7 +60,10 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
   }
 
   function refreshPreview() {
-    view?.renderCamera(getCamera());
+    const camera = getCamera();
+    camera.palette = colorAnimator.update(camera);
+    view?.renderCamera(camera);
+    preparedVideo?.renderCamera(camera);
   }
 
   function openPopup() {
@@ -78,7 +84,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       doc.documentElement.lang = "ko";
       const stylesheet = doc.createElement("link");
       stylesheet.rel = "stylesheet";
-      stylesheet.href = new URL("./mini-window.css?v=0.7.5", location.href);
+      stylesheet.href = new URL("./mini-window.css?v=0.7.6", location.href);
       doc.head.append(stylesheet);
       doc.body.append(doc.importNode(template.content, true));
 
@@ -95,7 +101,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       popupPin.checked = pinned;
       popupPin.disabled = !canPin;
       popupPin.title = canPin ? "다른 창 위에 고정" : "이 브라우저는 항상 위를 지원하지 않습니다.";
-      popupPin.addEventListener("change", () => changePinned(popupPin.checked));
+      popupPin.addEventListener("change", () => changePinned(popupPin.checked, true));
       action.addEventListener("click", toggleTimer);
 
       const opened = {
@@ -118,7 +124,10 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
           action.disabled = !next.canStart;
         },
         renderCamera(camera) {
-          footer.dataset.posture = camera.active ? camera.posture : "idle";
+          const palette = camera.palette ?? posturePalette(camera);
+          footer.style.setProperty("--posture-start", palette.start);
+          footer.style.setProperty("--posture-end", palette.end);
+          footer.style.setProperty("--posture-ink", palette.ink);
           off.hidden = camera.active;
           canvas.hidden = !camera.active;
           posture.hidden = !camera.active;
@@ -152,7 +161,9 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
     }
   }
 
-  async function openVideoPip() {
+  function prepareVideoPip() {
+    if (preparedVideo) return preparedVideo;
+
     const canvas = document.createElement("canvas");
     canvas.width = 480;
     canvas.height = 358;
@@ -167,13 +178,16 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
     document.body.append(video);
     video.srcObject = stream;
 
-    function render() {
-      drawVideoMiniWindow(context, preview, getCamera(), timer);
+    function render(camera = getCamera()) {
+      drawVideoMiniWindow(context, preview, camera, timer);
     }
 
     const opened = {
       pinned: true,
+      video,
+      ready: false,
       close() {
+        if (preparedVideo === opened) preparedVideo = undefined;
         if (document.pictureInPictureElement === video) document.exitPictureInPicture().catch(() => {});
         else if (video.webkitPresentationMode === PIP) video.webkitSetPresentationMode("inline");
         for (const track of stream.getTracks()) track.stop();
@@ -181,38 +195,66 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
         video.remove();
       },
       renderCamera: render,
-      updateTimer: render
+      updateTimer: () => render()
     };
 
+    preparedVideo = opened;
+    render();
+    video.addEventListener("loadeddata", () => { opened.ready = true; }, { once: true });
+    video.play().then(() => { opened.ready = video.readyState >= 2; }).catch(() => {});
+    return opened;
+  }
+
+  async function openVideoPip() {
+    const opened = prepareVideoPip();
+    const { video } = opened;
+    if (!opened.ready && video.readyState < 2) {
+      const error = new Error("고정 영상을 준비하고 있어요. 본 화면의 ‘항상 위로 전환’을 한 번 더 눌러 주세요.");
+      error.name = "PinGestureRequired";
+      throw error;
+    }
     try {
-      const playing = video.play();
-      render();
-      await withTimeout(playing);
+      // Request PiP directly in the click handler, before awaiting playback.
       if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-        await withTimeout(video.requestPictureInPicture());
+        const request = video.requestPictureInPicture();
+        await withTimeout(request);
         video.addEventListener("leavepictureinpicture", () => {
           if (view === opened) replaceView(undefined);
         }, { once: true });
       } else if (video.webkitSupportsPresentationMode?.(PIP)) {
-        await withTimeout(new Promise(resolve => {
-          video.addEventListener("webkitpresentationmodechanged", () => {
+        const entered = new Promise(resolve => {
+          function changed() {
             if (video.webkitPresentationMode === PIP) resolve();
             else if (view === opened) replaceView(undefined);
-          });
+          }
+          video.addEventListener("webkitpresentationmodechanged", changed);
           video.webkitSetPresentationMode(PIP);
-        }));
+          if (video.webkitPresentationMode === PIP) resolve();
+        });
+        await withTimeout(entered);
       } else {
-        throw new Error("Video PiP unavailable");
+        throw new Error("이 브라우저에서는 영상 고정을 지원하지 않습니다. Chrome에서 항상 위를 사용해 주세요.");
       }
+      preparedVideo = undefined;
       return opened;
-    } catch {
+    } catch (error) {
       opened.close();
-      throw new Error("이 브라우저에서 고정 창을 열지 못했어요. ‘항상 위’를 끄면 일반 창을 열 수 있어요.");
+      throw error;
     }
+  }
+
+  function requestMainWindowGesture(text) {
+    pendingPin = true;
+    pin.checked = view?.pinned ?? false;
+    message(text || "브라우저가 본 화면의 직접 클릭을 요구합니다. 본 화면의 ‘항상 위로 전환’을 눌러 주세요.");
+    syncControls();
+    window.focus();
+    button.focus();
   }
 
   async function openPreferred() {
     const pinned = pin.checked;
+    pendingPin = false;
     opening = true;
     syncControls();
     message();
@@ -221,10 +263,19 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
         ? await openVideoPip()
         : await openWindow(pinned);
       replaceView(next);
+      try { localStorage.setItem(PIN_SETTING, String(next.pinned)); } catch { /* Optional preference. */ }
       if (timer) next.updateTimer(timer);
       refreshPreview();
+      if (!pinned && !documentPip?.requestWindow && videoPip) prepareVideoPip();
+      if (pinned && !documentPip?.requestWindow) {
+        message("영상 고정 중입니다. 타이머 조작과 고정 해제는 본 화면에서 할 수 있어요.");
+      }
     } catch (error) {
       if (view) pin.checked = view.pinned;
+      if (pinned && ["NotAllowedError", "PinGestureRequired"].includes(error.name)) {
+        requestMainWindowGesture(error.name === "PinGestureRequired" ? error.message : undefined);
+        return;
+      }
       const hint = pinned
         ? "고정 창을 열지 못했어요. ‘항상 위’를 끄고 일반 창을 열 수 있어요."
         : "팝업을 허용한 뒤 미니 창을 다시 열어 주세요.";
@@ -236,11 +287,20 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
   }
 
   button.addEventListener("click", () => {
-    if (view) replaceView(undefined);
+    if (pendingPin) {
+      pin.checked = true;
+      openPreferred();
+    } else if (view) replaceView(undefined);
     else openPreferred();
   });
-  async function changePinned(checked) {
+  async function changePinned(checked, fromPopup = false) {
     if (opening) return;
+    pendingPin = false;
+    if (checked && fromPopup && window.navigator.userActivation?.isActive !== true) {
+      if (!documentPip?.requestWindow && videoPip) prepareVideoPip();
+      requestMainWindowGesture();
+      return;
+    }
     pin.checked = checked;
     if (view) await openPreferred();
     try {
@@ -252,6 +312,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
   pin.addEventListener("change", () => changePinned(pin.checked));
   window.addEventListener("pagehide", () => {
     if (view) replaceView(undefined);
+    preparedVideo?.close();
   });
   if (!canPin) message("이 브라우저에서는 일반 미니 창을 사용할 수 있어요.");
 
@@ -293,15 +354,15 @@ function drawVideoMiniWindow(context, preview, camera, timer) {
     context.fillText(camera.status, width / 2, videoHeight - 12);
   }
 
-  const colors = postureColors(camera.active ? camera.posture : "idle");
+  const palette = camera.palette ?? posturePalette(camera);
   const gradient = context.createLinearGradient(0, videoHeight, width, height);
-  gradient.addColorStop(0, colors[0]);
-  gradient.addColorStop(1, colors[1]);
+  gradient.addColorStop(0, palette.start);
+  gradient.addColorStop(1, palette.end);
   context.fillStyle = gradient;
   context.fillRect(0, videoHeight, width, height - videoHeight);
-  context.fillStyle = timer?.state === "complete" ? "#166534" : "#475569";
+  context.fillStyle = palette.ink;
   context.fillText(timer?.label ?? "시작 대기", width / 2, videoHeight + 24);
-  context.fillStyle = "#111827";
+  context.fillStyle = palette.ink;
   context.font = "700 44px -apple-system, sans-serif";
   context.fillText(timer?.time ?? "30:00", width / 2, height - 14);
 }
@@ -314,11 +375,48 @@ function withTimeout(promise) {
   return Promise.race([promise, expiry]).finally(() => clearTimeout(timeout));
 }
 
-function postureColors(state) {
+// Color follows the score continuously; thresholds match the selected sensitivity.
+export function posturePalette(camera, smoothedScore = camera.score) {
+  if (!camera.active || camera.posture === "idle" || !Number.isFinite(smoothedScore)) {
+    return { start: "#f1f5f9", end: "#e2e8f0", ink: "#172033" };
+  }
+  const warn = camera.thresholds?.warnThreshold ?? 75;
+  const bad = camera.thresholds?.badThreshold ?? 50;
+  const stops = [
+    [0, [153, 27, 27], [69, 10, 10]],
+    [Math.max(0, bad - 15), [220, 38, 38], [127, 29, 29]],
+    [bad, [251, 146, 60], [234, 88, 12]],
+    [warn, [253, 224, 71], [250, 204, 21]],
+    [100, [134, 239, 172], [34, 197, 94]]
+  ];
+  const score = Math.max(0, Math.min(100, smoothedScore));
+  const upper = Math.max(1, stops.findIndex(stop => score <= stop[0]));
+  const left = stops[upper - 1], right = stops[upper];
+  const t = (score - left[0]) / (right[0] - left[0]);
+  const mix = index => left[index].map((c, i) => Math.round(c + (right[index][i] - c) * t));
+  const rgb = values => `rgb(${values.join(", ")})`;
+  // Blend ink as well so the dark red remains readable without a sudden jump.
+  const light = Math.max(0, Math.min(1, (score - (bad - 12)) / 10));
+  const ink = [255, 255, 255].map((c, i) => Math.round(c + ([23, 32, 51][i] - c) * light));
+  return { start: rgb(mix(1)), end: rgb(mix(2)), ink: rgb(ink) };
+}
+
+function createPostureAnimator() {
+  let score;
+  let lastAt;
   return {
-    good: ["#bbf7d0", "#4ade80"],
-    warn: ["#fef08a", "#fbbf24"],
-    bad: ["#fecaca", "#f87171"],
-    idle: ["#f1f5f9", "#e2e8f0"]
-  }[state] ?? ["#f1f5f9", "#e2e8f0"];
+    update(camera) {
+      const now = performance.now();
+      if (!camera.active || camera.posture === "idle" || !Number.isFinite(camera.score)) {
+        score = undefined;
+        lastAt = now;
+        return posturePalette(camera);
+      }
+      const elapsed = Math.max(0, Math.min(1000, now - (lastAt ?? now)));
+      const alpha = 1 - Math.exp(-elapsed / 280);
+      score = score === undefined ? camera.score : score + (camera.score - score) * alpha;
+      lastAt = now;
+      return posturePalette(camera, score);
+    }
+  };
 }

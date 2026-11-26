@@ -1,6 +1,6 @@
 import { setupCameraBackground } from "./camera-background.js?v=0.7.4";
 import { setupFocusTimer } from "./focus-timer.js?v=0.7.0";
-import { setupMiniWindow } from "./mini-window.js?v=0.7.5";
+import { setupMiniWindow } from "./mini-window.js?v=0.7.6";
 import { setupCameraDevices } from "./camera-device.js?v=0.7.1";
 
 const els = {
@@ -920,6 +920,8 @@ const miniWindow = setupMiniWindow({
   getCamera: () => ({
     active: webcamRunning,
     status: els.cameraStatusText.textContent,
+    score: Number(els.score.textContent),
+    thresholds: sensitivityMap[els.sensitivity.value],
     posture: baseline && !isCalibrating && els.score.textContent !== "--" &&
       ["good", "warn", "bad"].includes(els.statusPill.classList[1])
       ? classifyScore(Number(els.score.textContent)) : "idle"
