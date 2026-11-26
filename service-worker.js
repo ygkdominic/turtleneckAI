@@ -1,16 +1,16 @@
 const CACHE_PREFIX = "turtleneck-ai-web-";
-const CACHE_NAME = `${CACHE_PREFIX}v074`;
+const CACHE_NAME = `${CACHE_PREFIX}v075`;
 const APP_PAGES = ["./", "./index.html", "./index-22.html"]
   .map(path => new URL(path, self.registration.scope).href);
 const ASSETS = [
   ...APP_PAGES,
-  "./styles.css?v=0.7.3",
-  "./app.js?v=0.7.4",
+  "./styles.css?v=0.7.5",
+  "./app.js?v=0.7.5",
   "./camera-device.js?v=0.7.1",
   "./camera-background.js?v=0.7.4",
   "./focus-timer.js?v=0.7.0",
-  "./mini-window.js?v=0.7.0",
-  "./mini-window.css?v=0.7.0",
+  "./mini-window.js?v=0.7.5",
+  "./mini-window.css?v=0.7.5",
   "./manifest.webmanifest",
   "./backgrounds/meeting-room.jpg",
   "./backgrounds/cafe.jpg"

@@ -78,3 +78,18 @@ body { margin: 0; }
 }
 
 .mini-timer-action:disabled { opacity: 0.45; cursor: default; }
+
+.mini-timer { background: linear-gradient(120deg, #f1f5f9, #e2e8f0); }
+.mini-timer[data-posture="good"] { background: linear-gradient(120deg, #bbf7d0, #4ade80); }
+.mini-timer[data-posture="warn"] { background: linear-gradient(120deg, #fef08a, #fbbf24); }
+.mini-timer[data-posture="bad"] { background: linear-gradient(120deg, #fecaca, #f87171); }
+.mini-timer-state,
+.mini-timer-state[data-state="running"],
+.mini-timer-state[data-state="complete"] { color: #1e293b; font-size: 13px; }
+.mini-actions { display: grid; justify-items: end; gap: 6px; }
+.mini-pin-control { display: flex; align-items: center; gap: 4px; color: #172033; font-size: 13px; font-weight: 600; cursor: pointer; }
+.mini-pin-input { margin: 0; width: 15px; height: 15px; accent-color: #1e3a8a; }
+.mini-timer-action { font-size: 13px; background: #ffffffd9; border-color: #33415540; }
+.mini-timer-action:focus-visible, .mini-pin-input:focus-visible { outline: 2px solid #1e3a8a; outline-offset: 2px; }
+.mini-posture { font-size: 12px; }
+.mini-message { margin: 0; padding: 8px 10px; background: #fff7ed; color: #7c2d12; font-size: 13px; }

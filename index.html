@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f5f7fb" />
-  <title>turtleneckAI</title>
+  <title>turtleneck AI</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=0.7.3" />
+  <link rel="stylesheet" href="styles.css?v=0.7.5" />
 </head>
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="eyebrow">ON-DEVICE AI HABIT COACH</div>
-      <h1>turtleneckAI</h1>
+      <div class="eyebrow">하루종일 고생하는 당신의 목을 위해</div>
+      <h1>turtleneck AI</h1>
       <p class="hero-copy">집중하는 동안 자세가 흐트러지면 알려드려요.</p>
       <p class="privacy-copy">영상은 저장하지 않고 기기에서 분석합니다.</p>
       <div class="hero-actions">
@@ -193,6 +193,10 @@
         <p class="disclaimer">터틀넥 AI는 의료 진단이나 치료 목적이 아닌, 좋은 자세 습관 형성을 돕는 AI 습관 코치입니다.</p>
       </div>
     </details>
+    <footer class="site-footer">
+      <span>since Mar. 2026.</span>
+      <a href="mailto:ygkdominic@gmail.com">협업 및 문의 : ygkdominic@gmail.com</a>
+    </footer>
   </main>
 
 
@@ -213,11 +217,15 @@
           <span class="mini-timer-state" role="status">시작 대기</span>
           <strong class="mini-time" role="timer" aria-label="남은 집중 시간">30:00</strong>
         </div>
-        <button class="mini-timer-action" type="button">집중 시작</button>
+        <div class="mini-actions">
+          <label class="mini-pin-control"><input class="mini-pin-input" type="checkbox" /> 항상 위</label>
+          <button class="mini-timer-action" type="button">집중 시작</button>
+        </div>
       </footer>
+      <p class="mini-message" role="status" hidden></p>
     </main>
   </template>
 
-  <script type="module" src="app.js?v=0.7.4"></script>
+  <script type="module" src="app.js?v=0.7.5"></script>
 </body>
 </html>

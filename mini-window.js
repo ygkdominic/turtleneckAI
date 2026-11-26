@@ -27,12 +27,14 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
   function message(text = "") {
     status.textContent = text;
     status.hidden = !text;
+    view?.showMessage?.(text);
   }
 
   function syncControls() {
     button.textContent = view ? "미니 창 닫기" : "미니 창 열기";
     button.disabled = opening;
     pin.disabled = opening || !canPin;
+    view?.syncPin?.(pin.checked, opening || !canPin);
   }
 
   function replaceView(next, closePrevious = true) {
@@ -72,11 +74,11 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       : openPopup();
     try {
       const doc = target.document;
-      doc.title = "turtleneckAI 미니 창";
+      doc.title = "turtleneck AI 미니 창";
       doc.documentElement.lang = "ko";
       const stylesheet = doc.createElement("link");
       stylesheet.rel = "stylesheet";
-      stylesheet.href = new URL("./mini-window.css?v=0.7.0", location.href);
+      stylesheet.href = new URL("./mini-window.css?v=0.7.5", location.href);
       doc.head.append(stylesheet);
       doc.body.append(doc.importNode(template.content, true));
 
@@ -87,12 +89,27 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       const time = doc.querySelector(".mini-time");
       const state = doc.querySelector(".mini-timer-state");
       const action = doc.querySelector(".mini-timer-action");
+      const popupPin = doc.querySelector(".mini-pin-input");
+      const footer = doc.querySelector(".mini-timer");
+      const popupMessage = doc.querySelector(".mini-message");
+      popupPin.checked = pinned;
+      popupPin.disabled = !canPin;
+      popupPin.title = canPin ? "다른 창 위에 고정" : "이 브라우저는 항상 위를 지원하지 않습니다.";
+      popupPin.addEventListener("change", () => changePinned(popupPin.checked));
       action.addEventListener("click", toggleTimer);
 
       const opened = {
         pinned,
         window: target,
         close: () => target.close(),
+        syncPin(checked, disabled) {
+          popupPin.checked = checked;
+          popupPin.disabled = disabled;
+        },
+        showMessage(text) {
+          popupMessage.textContent = text;
+          popupMessage.hidden = !text;
+        },
         updateTimer(next) {
           time.textContent = next.time;
           state.textContent = next.label;
@@ -101,6 +118,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
           action.disabled = !next.canStart;
         },
         renderCamera(camera) {
+          footer.dataset.posture = camera.active ? camera.posture : "idle";
           off.hidden = camera.active;
           canvas.hidden = !camera.active;
           posture.hidden = !camera.active;
@@ -221,14 +239,17 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
     if (view) replaceView(undefined);
     else openPreferred();
   });
-  pin.addEventListener("change", async () => {
+  async function changePinned(checked) {
+    if (opening) return;
+    pin.checked = checked;
     if (view) await openPreferred();
     try {
       localStorage.setItem(PIN_SETTING, String(pin.checked));
     } catch {
       // Retain the current choice until the page closes.
     }
-  });
+  }
+  pin.addEventListener("change", () => changePinned(pin.checked));
   window.addEventListener("pagehide", () => {
     if (view) replaceView(undefined);
   });
@@ -272,7 +293,11 @@ function drawVideoMiniWindow(context, preview, camera, timer) {
     context.fillText(camera.status, width / 2, videoHeight - 12);
   }
 
-  context.fillStyle = "#f8fafc";
+  const colors = postureColors(camera.active ? camera.posture : "idle");
+  const gradient = context.createLinearGradient(0, videoHeight, width, height);
+  gradient.addColorStop(0, colors[0]);
+  gradient.addColorStop(1, colors[1]);
+  context.fillStyle = gradient;
   context.fillRect(0, videoHeight, width, height - videoHeight);
   context.fillStyle = timer?.state === "complete" ? "#166534" : "#475569";
   context.fillText(timer?.label ?? "시작 대기", width / 2, videoHeight + 24);
@@ -287,4 +312,13 @@ function withTimeout(promise) {
     timeout = setTimeout(() => reject(new Error("PiP timeout")), 2400);
   });
   return Promise.race([promise, expiry]).finally(() => clearTimeout(timeout));
+}
+
+function postureColors(state) {
+  return {
+    good: ["#bbf7d0", "#4ade80"],
+    warn: ["#fef08a", "#fbbf24"],
+    bad: ["#fecaca", "#f87171"],
+    idle: ["#f1f5f9", "#e2e8f0"]
+  }[state] ?? ["#f1f5f9", "#e2e8f0"];
 }

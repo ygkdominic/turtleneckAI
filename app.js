@@ -1,6 +1,6 @@
 import { setupCameraBackground } from "./camera-background.js?v=0.7.4";
 import { setupFocusTimer } from "./focus-timer.js?v=0.7.0";
-import { setupMiniWindow } from "./mini-window.js?v=0.7.0";
+import { setupMiniWindow } from "./mini-window.js?v=0.7.5";
 import { setupCameraDevices } from "./camera-device.js?v=0.7.1";
 
 const els = {
@@ -766,7 +766,7 @@ function saveReportImage() {
 
   ctx.fillStyle = "#111827";
   ctx.font = "700 54px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
-  ctx.fillText("turtleneckAI", 80, 100);
+  ctx.fillText("turtleneck AI", 80, 100);
   ctx.font = "600 30px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
   ctx.fillText("오늘의 자세 리포트", 80, 158);
   ctx.fillStyle = "#6b7280";
@@ -917,7 +917,13 @@ const cameraBackground = setupCameraBackground(els.preview, () => miniWindow.ref
 const cameraDevices = setupCameraDevices(els.cameraSelect, els.cameraDeviceStatus);
 const miniWindow = setupMiniWindow({
   preview: els.preview,
-  getCamera: () => ({ active: webcamRunning, status: els.cameraStatusText.textContent }),
+  getCamera: () => ({
+    active: webcamRunning,
+    status: els.cameraStatusText.textContent,
+    posture: baseline && !isCalibrating && els.score.textContent !== "--" &&
+      ["good", "warn", "bad"].includes(els.statusPill.classList[1])
+      ? classifyScore(Number(els.score.textContent)) : "idle"
+  }),
   toggleTimer: () => focusTimer.toggle(),
   onWindowChange() {
     schedulePrediction();
