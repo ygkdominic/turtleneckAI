@@ -84,7 +84,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       doc.documentElement.lang = "ko";
       const stylesheet = doc.createElement("link");
       stylesheet.rel = "stylesheet";
-      stylesheet.href = new URL("./mini-window.css?v=0.7.6", location.href);
+      stylesheet.href = new URL("./mini-window.css?v=0.7.7", location.href);
       doc.head.append(stylesheet);
       doc.body.append(doc.importNode(template.content, true));
 
@@ -125,6 +125,9 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
         },
         renderCamera(camera) {
           const palette = camera.palette ?? posturePalette(camera);
+          // Apply the complete gradient too: an older cached stylesheet must not hide it.
+          footer.style.background = `linear-gradient(120deg, ${palette.start}, ${palette.end})`;
+          footer.style.color = palette.ink;
           footer.style.setProperty("--posture-start", palette.start);
           footer.style.setProperty("--posture-end", palette.end);
           footer.style.setProperty("--posture-ink", palette.ink);
@@ -376,8 +379,8 @@ function withTimeout(promise) {
 }
 
 // Color follows the score continuously; thresholds match the selected sensitivity.
-export function posturePalette(camera, smoothedScore = camera.score) {
-  if (!camera.active || camera.posture === "idle" || !Number.isFinite(smoothedScore)) {
+export function posturePalette(camera, smoothedScore = resolvedPostureScore(camera)) {
+  if (!camera.active || resolvedPostureState(camera) === "idle" || !Number.isFinite(smoothedScore)) {
     return { start: "#f1f5f9", end: "#e2e8f0", ink: "#172033" };
   }
   const warn = camera.thresholds?.warnThreshold ?? 75;
@@ -401,20 +404,34 @@ export function posturePalette(camera, smoothedScore = camera.score) {
   return { start: rgb(mix(1)), end: rgb(mix(2)), ink: rgb(ink) };
 }
 
+// Accept earlier camera payloads too, so mixed cached versions keep their colors.
+function resolvedPostureState(camera) {
+  if (["good", "warn", "bad", "idle"].includes(camera.posture)) return camera.posture;
+  if (camera.status === "좋은 자세") return "good";
+  if (camera.status === "주의 자세") return "warn";
+  if (camera.status === "무너진 자세") return "bad";
+  return "idle";
+}
+function resolvedPostureScore(camera) {
+  if (typeof camera.score === "number" && Number.isFinite(camera.score)) return camera.score;
+  return { good: 100, warn: 65, bad: 25 }[resolvedPostureState(camera)] ?? null;
+}
+
 function createPostureAnimator() {
   let score;
   let lastAt;
   return {
     update(camera) {
       const now = performance.now();
-      if (!camera.active || camera.posture === "idle" || !Number.isFinite(camera.score)) {
+      const targetScore = resolvedPostureScore(camera);
+      if (!camera.active || resolvedPostureState(camera) === "idle" || !Number.isFinite(targetScore)) {
         score = undefined;
         lastAt = now;
         return posturePalette(camera);
       }
       const elapsed = Math.max(0, Math.min(1000, now - (lastAt ?? now)));
       const alpha = 1 - Math.exp(-elapsed / 280);
-      score = score === undefined ? camera.score : score + (camera.score - score) * alpha;
+      score = score === undefined ? targetScore : score + (targetScore - score) * alpha;
       lastAt = now;
       return posturePalette(camera, score);
     }

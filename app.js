@@ -1,6 +1,6 @@
 import { setupCameraBackground } from "./camera-background.js?v=0.7.4";
 import { setupFocusTimer } from "./focus-timer.js?v=0.7.0";
-import { setupMiniWindow } from "./mini-window.js?v=0.7.6";
+import { setupMiniWindow } from "./mini-window.js?v=0.7.7";
 import { setupCameraDevices } from "./camera-device.js?v=0.7.1";
 
 const els = {
@@ -49,6 +49,8 @@ let lastVideoTime = -1;
 let baseline = null;
 let calibrationFrames = [];
 let isCalibrating = false;
+let miniPostureScore = null;
+let miniPostureState = "idle";
 let badStartedAt = null;
 let lastAlertAt = 0;
 let badCount = 0;
@@ -321,6 +323,7 @@ function classifyScore(score) {
 }
 
 function updateUI(score, metrics) {
+  miniPostureScore = Number.isFinite(score) ? score : null;
   els.score.textContent = Number.isFinite(score) ? score : "--";
   els.meterFill.style.width = `${Number.isFinite(score) ? score : 0}%`;
 
@@ -350,6 +353,8 @@ function updateUI(score, metrics) {
 }
 
 function setStatus(kind, text) {
+  miniPostureState = kind;
+  if (kind === "idle") miniPostureScore = null;
   els.statusPill.className = `status-pill ${kind}`;
   els.statusPill.textContent = text;
   if (els.cameraStatusText) els.cameraStatusText.textContent = text;
@@ -920,11 +925,10 @@ const miniWindow = setupMiniWindow({
   getCamera: () => ({
     active: webcamRunning,
     status: els.cameraStatusText.textContent,
-    score: Number(els.score.textContent),
+    score: miniPostureScore,
     thresholds: sensitivityMap[els.sensitivity.value],
-    posture: baseline && !isCalibrating && els.score.textContent !== "--" &&
-      ["good", "warn", "bad"].includes(els.statusPill.classList[1])
-      ? classifyScore(Number(els.score.textContent)) : "idle"
+    posture: baseline && !isCalibrating && Number.isFinite(miniPostureScore)
+      ? miniPostureState : "idle"
   }),
   toggleTimer: () => focusTimer.toggle(),
   onWindowChange() {
