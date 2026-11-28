@@ -1,6 +1,6 @@
-import { setupCameraBackground } from "./camera-background.js?v=0.7.4";
+import { setupCameraBackground } from "./camera-background.js?v=0.7.8";
 import { setupFocusTimer } from "./focus-timer.js?v=0.7.0";
-import { setupMiniWindow } from "./mini-window.js?v=0.7.7";
+import { setupMiniWindow } from "./mini-window.js?v=0.7.8";
 import { setupCameraDevices } from "./camera-device.js?v=0.7.1";
 
 const els = {
@@ -547,15 +547,25 @@ function schedulePrediction() {
 
   const miniDisplay = miniWindow.frameWindow();
   const displayWindow = miniDisplay && !miniDisplay.closed ? miniDisplay : window;
-  if (displayWindow.document.hidden && miniWindow.isOpen()) {
-    const id = window.setTimeout(predictWebcam, 125);
-    cancelNextPrediction = () => window.clearTimeout(id);
-  } else {
-    const id = displayWindow.requestAnimationFrame(predictWebcam);
-    cancelNextPrediction = () => {
-      if (!displayWindow.closed) displayWindow.cancelAnimationFrame(id);
-    };
-  }
+  // Race the animation frame with a watchdog. Safari can suspend rAF in an
+  // auxiliary window while its opener is behind another tab/window.
+  let frameId;
+  let timeoutId;
+  let fired = false;
+  const run = () => {
+    if (fired) return;
+    fired = true;
+    displayWindow.clearTimeout(timeoutId);
+    if (!displayWindow.closed && frameId !== undefined) displayWindow.cancelAnimationFrame(frameId);
+    predictWebcam();
+  };
+  if (!displayWindow.document.hidden) frameId = displayWindow.requestAnimationFrame(run);
+  timeoutId = displayWindow.setTimeout(run, 150);
+  cancelNextPrediction = () => {
+    fired = true;
+    displayWindow.clearTimeout(timeoutId);
+    if (!displayWindow.closed && frameId !== undefined) displayWindow.cancelAnimationFrame(frameId);
+  };
 }
 
 function predictWebcam() {

@@ -53,7 +53,7 @@ button, select, input { font: inherit; letter-spacing: inherit; }
 
 .eyebrow {
   color: var(--blue);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.015em;
   margin-bottom: var(--space-2);
@@ -877,3 +877,5 @@ input[type="checkbox"] { width: 18px; height: 18px; }
 @media (max-width: 520px) {
   .site-footer { flex-direction: column; gap: 8px; }
 }
+
+.browser-note { margin: 12px 0; color: #475569; font-size: 14px; line-height: 1.6; }

@@ -22,7 +22,8 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
 
   pin.disabled = !canPin;
   try {
-    pin.checked = canPin && localStorage.getItem(PIN_SETTING) === "true";
+    // HTML PiP preferences cannot be carried across to Safari's video-only mode.
+    pin.checked = Boolean(documentPip?.requestWindow) && localStorage.getItem(PIN_SETTING) === "true";
   } catch {
     // Window controls still work without saved preferences.
   }
@@ -44,6 +45,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
     const previous = view;
     view = next;
     if (previous && closePrevious) previous.close();
+    if (!next && preparedVideo) preparedVideo.close();
     syncControls();
     onWindowChange();
   }
@@ -84,7 +86,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       doc.documentElement.lang = "ko";
       const stylesheet = doc.createElement("link");
       stylesheet.rel = "stylesheet";
-      stylesheet.href = new URL("./mini-window.css?v=0.7.7", location.href);
+      stylesheet.href = new URL("./mini-window.css?v=0.7.8", location.href);
       doc.head.append(stylesheet);
       doc.body.append(doc.importNode(template.content, true));
 
@@ -148,7 +150,9 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
         }
       };
       target.addEventListener("pagehide", () => reportClosed(opened), { once: true });
-      doc.addEventListener("visibilitychange", onWindowChange);
+      const visibilityChanged = () => { onWindowChange(); refreshPreview(); };
+      doc.addEventListener("visibilitychange", visibilityChanged);
+      target.addEventListener("pagehide", () => doc.removeEventListener("visibilitychange", visibilityChanged), { once: true });
       target.addEventListener("resize", () => {
         if (target.innerWidth && target.innerHeight) {
           size = {
@@ -171,11 +175,19 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
     canvas.width = 480;
     canvas.height = 358;
     const context = canvas.getContext("2d");
-    const stream = canvas.captureStream(12);
+    // Keep stream dimensions fixed; Safari PiP is sensitive to source resizing.
+    const stream = canvas.captureStream(15);
     const video = document.createElement("video");
     video.className = "video-source";
+    // Keep the Safari media element renderable rather than fully transparent.
+    video.style.cssText = "position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none;";
     video.muted = true;
     video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("muted", "");
+    video.autoplay = true;
+    video.width = 480;
+    video.height = 358;
     video.disableRemotePlayback = true;
     video.setAttribute("aria-hidden", "true");
     document.body.append(video);
@@ -183,6 +195,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
 
     function render(camera = getCamera()) {
       drawVideoMiniWindow(context, preview, camera, timer);
+      stream.getVideoTracks()[0]?.requestFrame?.();
     }
 
     const opened = {
@@ -269,12 +282,16 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
       try { localStorage.setItem(PIN_SETTING, String(next.pinned)); } catch { /* Optional preference. */ }
       if (timer) next.updateTimer(timer);
       refreshPreview();
-      if (!pinned && !documentPip?.requestWindow && videoPip) prepareVideoPip();
+      if (!pinned && !documentPip?.requestWindow) {
+        // An optional video fallback must never break the fully interactive popup.
+        try { if (videoPip) prepareVideoPip(); } catch { /* Ordinary popup remains usable. */ }
+        message("Safari 등 HTML 고정 창 미지원 브라우저에서는 일반 미니 창으로 실행합니다. 항상 위는 영상형 PiP이며, 타이머 조작은 본 화면에서 가능합니다.");
+      }
       if (pinned && !documentPip?.requestWindow) {
         message("영상 고정 중입니다. 타이머 조작과 고정 해제는 본 화면에서 할 수 있어요.");
       }
     } catch (error) {
-      if (view) pin.checked = view.pinned;
+      pin.checked = view?.pinned ?? false;
       if (pinned && ["NotAllowedError", "PinGestureRequired"].includes(error.name)) {
         requestMainWindowGesture(error.name === "PinGestureRequired" ? error.message : undefined);
         return;
@@ -300,7 +317,7 @@ export function setupMiniWindow({ preview, getCamera, toggleTimer, onWindowChang
     if (opening) return;
     pendingPin = false;
     if (checked && fromPopup && window.navigator.userActivation?.isActive !== true) {
-      if (!documentPip?.requestWindow && videoPip) prepareVideoPip();
+      if (!documentPip?.requestWindow && videoPip) { try { prepareVideoPip(); } catch { /* Keep popup. */ } }
       requestMainWindowGesture();
       return;
     }

@@ -5,7 +5,7 @@ const SCENES = {
 const MODES = ["original", "blur", ...Object.keys(SCENES)];
 const SETTINGS_KEY = "turtleneckAIBackground";
 const MASK_SAMPLE_SIZE = 256;
-const MASK_SMOOTHING_MS = 100;
+const MASK_SMOOTHING_MS = 120;
 const MASK_MAX_GAP_MS = 200;
 const MASK_BLACK = [0, 0, 0, 255];
 const MASK_WHITE = [255, 255, 255, 255];
@@ -115,12 +115,12 @@ export function setupCameraBackground(preview, onPreviewCleared) {
             modelGL.bindFramebuffer(modelGL.FRAMEBUFFER, null);
             modelGL.viewport(0, 0, modelGL.drawingBufferWidth, modelGL.drawingBufferHeight);
           }
-          if (mode === "blur" && blurMask && !blurSmoothingFailed) {
+          if (blurMask && !blurSmoothingFailed) {
             let matte;
             try {
               matte = blurMask.update(mask, width, height, performance.now());
             } catch (error) {
-              console.warn("블러 윤곽 보정 실패", error);
+              console.warn("배경 윤곽 보정 실패", error);
               blurSmoothingFailed = true;
               blurMask.reset();
             }
@@ -129,7 +129,7 @@ export function setupCameraBackground(preview, onPreviewCleared) {
               return true;
             }
           }
-        } else if (mode === "blur") {
+        } else {
           blurMask?.reset();
         }
 
@@ -201,6 +201,7 @@ function createBlurMask(DrawingUtils, modelGL) {
   if (!context) return null;
   const drawing = new DrawingUtils(context, modelGL ?? undefined);
   let previous;
+  let horizontal;
   let lastFrameTime;
 
   return {
@@ -212,6 +213,7 @@ function createBlurMask(DrawingUtils, modelGL) {
         canvas.width = width;
         canvas.height = height;
         previous = new Float32Array(width * height);
+        horizontal = new Float32Array(width * height);
         lastFrameTime = undefined;
       }
       const elapsed = now - lastFrameTime;
@@ -232,6 +234,20 @@ function createBlurMask(DrawingUtils, modelGL) {
         // Fade uncertain edges and clear areas the current frame identifies as background.
         pixels[pixel + 3] = (Math.min(smoothed, current * 1.6) - 24) * (255 / 200);
       }
+      // Separable 3-tap feathering works in Safari without Canvas filter support.
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = y * width + x;
+          horizontal[i] = (pixels[(y * width + Math.max(0, x - 1)) * 4 + 3] +
+            2 * pixels[i * 4 + 3] + pixels[(y * width + Math.min(width - 1, x + 1)) * 4 + 3]) / 4;
+        }
+      }
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          pixels[(y * width + x) * 4 + 3] = (horizontal[Math.max(0, y - 1) * width + x] +
+            2 * horizontal[y * width + x] + horizontal[Math.min(height - 1, y + 1) * width + x]) / 4;
+        }
+      }
       context.putImageData(image, 0, 0);
       lastFrameTime = now;
       return canvas;
@@ -243,6 +259,7 @@ function createBlurMask(DrawingUtils, modelGL) {
       drawing.close();
       canvas.width = canvas.height = 1;
       previous = undefined;
+      horizontal = undefined;
       lastFrameTime = undefined;
     }
   };
